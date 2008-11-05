@@ -315,7 +315,7 @@ int main(int argc, char** argv)
 	strcpy(szTemp,"POST /statuses/update.xml");
 	sprintf(strchr(szTemp,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,TARGET,szAuthString64);
 
-	sprintf(strchr(szTemp, 0), "Content-Length: %i\n\nstatus=%s&source=twitcon",strlen(pszStatus) + 7, pszStatus);
+	sprintf(strchr(szTemp, 0), "Content-Length: %i\n\nsource=twitcon&status=%s",strlen(pszStatus) + 22, pszStatus);
 	free(pszStatus);
 
 	// Send the HTTP GET request to the server
