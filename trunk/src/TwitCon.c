@@ -55,7 +55,7 @@
 #endif
 
 #define TARGET "twitter.com"
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 // The base64 character set
 const char *pszBase64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
