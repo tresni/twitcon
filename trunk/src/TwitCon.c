@@ -121,6 +121,54 @@ char* compact_options(int start, int argc, char **argv)
 	return temp;
 }
 
+/* URL encode the message.  Also need to escape &, <, and > */
+char* url_encode(char* string, int* length)
+{
+	const char encode_chars[] = { '%', '$', '&', '+', ',', '/', ':', ';', '=', '?', '@', ' ', '"', '\'', '#', 0 };
+	const char escape_chars[] = { '&', '<', '>', 0 };
+	const char *escape_seqnc[] = { "&amp;", "&lt;", "&gt;", 0};
+	int i, j;
+	char *szTemp, *szTemp2, *pLoc = NULL;
+
+	szTemp = (char*)malloc(length + 1);
+	strcpy(szTemp, string);
+	
+	for (i = 0; escape_chars[i] != 0; i++)
+	{
+		j = 0;
+		while (pLoc = strchr(szTemp + j, escape_chars[i]))
+		{
+			j = pLoc - szTemp + 1;
+			szTemp2 = (char *)malloc(strlen(szTemp) + strlen(escape_seqnc[i]) + 1);
+			memset(szTemp2, 0, strlen(szTemp) + 4);
+			strncpy(szTemp2, szTemp, pLoc - szTemp);
+			sprintf(szTemp2, "%s%s%s", szTemp2, escape_seqnc[i], pLoc + 1);
+			free(szTemp);
+			szTemp = szTemp2;
+		}
+	}
+	*length = strlen(szTemp);
+
+	for (i = 0; encode_chars[i] != 0; i++)
+	{
+		j = 0;
+		while (pLoc = strchr(szTemp + j, encode_chars[i]))
+		{
+			j = pLoc - szTemp + 1;
+			szTemp2 = (char *)malloc(strlen(szTemp) + 4);
+			memset(szTemp2, 0, strlen(szTemp) + 4);
+			strncpy(szTemp2, szTemp, pLoc - szTemp);
+			sprintf(szTemp2, "%s%%%x%s", szTemp2, pLoc[0], pLoc + 1);
+			free(szTemp);
+			szTemp = szTemp2;
+		}
+	}
+
+	
+
+	return szTemp;
+}
+
 void LogMessage(char *message)
 {
 	static FILE *fp = -1;
@@ -150,7 +198,7 @@ void LogMessage(char *message)
 #define argv __argv
 
 /* Use WinMain on windows so it doesn't open a console dialog. */
-int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
 #else
 int main(int argc, char** argv)
@@ -193,6 +241,7 @@ int main(int argc, char** argv)
 		if (argc < 3)
 		{
 			sprintf(szTemp, "%s username password status message here", argv[0]);
+			LogMessage(szTemp);
 			return 1;
 		}
 		strcpy(pszUsername, argv[1]);
@@ -200,11 +249,23 @@ int main(int argc, char** argv)
 		startParam = 3;
 	}
 
+	pszStatus = compact_options(startParam, argc, argv);
+	psz = url_encode(pszStatus, &iBytes);
+	free(pszStatus);
+	pszStatus = psz;
+
+	if (iBytes > 160)
+	{
+		LogMessage("Status message is limited to 160 characters.  Twitter recommends 140.");
+		return 1;
+	}
+
 	sprintf(szTemp,"%s:%s",pszUsername,pszPassword);
 	base64_encode(szTemp,szAuthString64);
 
 #ifdef WIN32
-	if (WSAStartup(MAKEWORD(1,1),&wsad)) {
+	if (WSAStartup(MAKEWORD(1,1),&wsad))
+	{
 		LogMessage("Error: Unable to start Winsock.");
 		return 1;
 	}
@@ -212,7 +273,8 @@ int main(int argc, char** argv)
 
 	// Resolve the target host name
 	phe=gethostbyname(TARGET);
-	if (!phe) {
+	if (!phe)
+	{
 #ifdef WIN32
 		WSACleanup();
 #endif
@@ -229,7 +291,8 @@ int main(int argc, char** argv)
 
 	// Create a socket for the connection.
 	s=socket(AF_INET,SOCK_STREAM,PF_UNSPEC);
-	if (s==INVALID_SOCKET) {
+	if (s==INVALID_SOCKET)
+	{
 #ifdef WIN32
 		WSACleanup();
 #endif
@@ -252,12 +315,12 @@ int main(int argc, char** argv)
 	strcpy(szTemp,"POST /statuses/update.xml");
 	sprintf(strchr(szTemp,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,TARGET,szAuthString64);
 
-	pszStatus = compact_options(startParam, argc, argv);
-	sprintf(strchr(szTemp, 0), "Content-Length: %i\n\nstatus=%s",strlen(pszStatus) + 7, pszStatus);
+	sprintf(strchr(szTemp, 0), "Content-Length: %i\n\nstatus=%s&source=twitcon",strlen(pszStatus) + 7, pszStatus);
 	free(pszStatus);
 
 	// Send the HTTP GET request to the server
-	if (send(s,szTemp,strlen(szTemp),0)==SOCKET_ERROR) {
+	if (send(s,szTemp,strlen(szTemp),0)==SOCKET_ERROR)
+	{
 		closesocket(s);
 #ifdef WIN32
 		WSACleanup();
@@ -268,7 +331,8 @@ int main(int argc, char** argv)
 
 	// Read the HTTP response from the server
 	iBytes=recv(s,szTemp,4096,0);
-	if (iBytes==SOCKET_ERROR) {
+	if (iBytes==SOCKET_ERROR)
+	{
 		closesocket(s);
 #ifdef WIN32
 		WSACleanup();
