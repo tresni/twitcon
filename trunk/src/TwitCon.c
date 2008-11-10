@@ -122,51 +122,60 @@ char* compact_options(int start, int argc, char **argv)
 }
 
 /* URL encode the message.  Also need to escape &, <, and > */
-char* url_encode(char* string, int* length)
+char* url_encode(const char* string, int* length)
 {
 	const char encode_chars[] = { '%', '$', '&', '+', ',', '/', ':', ';', '=', '?', '@', ' ', '"', '\'', '#', 0 };
 	const char escape_chars[] = { '&', '<', '>', 0 };
-	const char *escape_seqnc[] = { "&amp;", "&lt;", "&gt;", 0};
-	int i, j;
-	char *szTemp, *szTemp2, *pLoc = NULL;
+	const char *escape_seqnc[] = { "&amp;", "&lt;", "&gt;", 0 };
+	int i;
+	char *buffer, *location = NULL;
 
-	szTemp = (char*)malloc(length + 1);
-	strcpy(szTemp, string);
-	
+	*length = strlen(string);
+
+	buffer = (char*)malloc(length + 1);
+	strcpy(buffer, string);
+
 	for (i = 0; escape_chars[i] != 0; i++)
 	{
-		j = 0;
-		while (pLoc = strchr(szTemp + j, escape_chars[i]))
+		int offset = 0;
+		while(location = strchr(buffer + offset, escape_chars[i]))
 		{
-			j = pLoc - szTemp + 1;
-			szTemp2 = (char *)malloc(strlen(szTemp) + strlen(escape_seqnc[i]) + 1);
-			memset(szTemp2, 0, strlen(szTemp) + 4);
-			strncpy(szTemp2, szTemp, pLoc - szTemp);
-			sprintf(szTemp2, "%s%s%s", szTemp2, escape_seqnc[i], pLoc + 1);
-			free(szTemp);
-			szTemp = szTemp2;
+			char *buffer2 = buffer;
+			int new_length = strlen(buffer) + strlen(escape_seqnc[0]) + 1;
+
+			offset = location - buffer + 1;
+			buffer = (char *)malloc(new_length);
+
+			memset(buffer, 0, new_length);
+			strncpy(buffer, buffer2, offset - 1);
+			sprintf(buffer, "%s%s%s", buffer, escape_seqnc[i], location + 1);
+
+			free(buffer2);
 		}
 	}
-	*length = strlen(szTemp);
+
+	*length = strlen(buffer);
 
 	for (i = 0; encode_chars[i] != 0; i++)
 	{
-		j = 0;
-		while (pLoc = strchr(szTemp + j, encode_chars[i]))
+		int offset = 0;
+		while (location = strchr(buffer + offset, encode_chars[i]))
 		{
-			j = pLoc - szTemp + 1;
-			szTemp2 = (char *)malloc(strlen(szTemp) + 4);
-			memset(szTemp2, 0, strlen(szTemp) + 4);
-			strncpy(szTemp2, szTemp, pLoc - szTemp);
-			sprintf(szTemp2, "%s%%%x%s", szTemp2, pLoc[0], pLoc + 1);
-			free(szTemp);
-			szTemp = szTemp2;
+			char *buffer2 = buffer;
+			int new_length = strlen(buffer2) + 4;
+			
+			offset = location - buffer + 1;
+			buffer = (char *)malloc(new_length);
+
+			memset(buffer, 0, new_length);
+			strncpy(buffer, buffer2, offset - 1);
+			sprintf(buffer, "%s%%%x%s", buffer, location[0], location + 1);
+
+			free(buffer2);
 		}
 	}
 
-	
-
-	return szTemp;
+	return buffer;
 }
 
 void LogMessage(char *message)
@@ -204,9 +213,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 int main(int argc, char** argv)
 {
 #endif
-	char *psz, *pszStatus=0;
-	char pszUsername[4096], pszPassword[4096];
-	char szTemp[4096], szAuthString64[256];
+	char *psz, *status=0;
+	char username[4096], password[4096], sbuffer[4096], authstring[256];
 #ifdef WIN32
 	WSADATA wsad;
 #endif
@@ -230,29 +238,32 @@ int main(int argc, char** argv)
 	fp = fopen(pszConfFile, "rt");
 	if (fp != NULL)
 	{
-		fgets(pszUsername, 4095, fp);
-		fgets(pszPassword, 4095, fp);
-		for (iBytes = strlen(pszUsername) - 1; pszUsername[iBytes] == '\r' || pszUsername[iBytes] == '\n' || pszUsername[iBytes] == ' '; pszUsername[iBytes] = '\0', iBytes--);
-		for (iBytes = strlen(pszPassword) - 1; pszPassword[iBytes] == '\r' || pszPassword[iBytes] == '\n' || pszPassword[iBytes] == ' '; pszPassword[iBytes] = '\0', iBytes--);
+		fgets(username, 4095, fp);
+		fgets(password, 4095, fp);
+
+		// Get rid of extra whitespace at the end of the string
+		for (iBytes = strlen(username) - 1; username[iBytes] == '\r' || username[iBytes] == '\n' || username[iBytes] == ' ' || username[iBytes] == '\t'; username[iBytes] = '\0', iBytes--);
+		for (iBytes = strlen(password) - 1; password[iBytes] == '\r' || password[iBytes] == '\n' || password[iBytes] == ' ' || password[iBytes] == '\t'; password[iBytes] = '\0', iBytes--);
+
 		fclose(fp);
 	}
 	else
 	{
 		if (argc < 3)
 		{
-			sprintf(szTemp, "%s username password status message here", argv[0]);
-			LogMessage(szTemp);
+			sprintf(sbuffer, "%s username password status message here", argv[0]);
+			LogMessage(sbuffer);
 			return 1;
 		}
-		strcpy(pszUsername, argv[1]);
-		strcpy(pszPassword, argv[2]);
+		strcpy(username, argv[1]);
+		strcpy(password, argv[2]);
 		startParam = 3;
 	}
 
-	pszStatus = compact_options(startParam, argc, argv);
-	psz = url_encode(pszStatus, &iBytes);
-	free(pszStatus);
-	pszStatus = psz;
+	status = compact_options(startParam, argc, argv);
+	psz = url_encode(status, &iBytes);
+	free(status);
+	status = psz;
 
 	if (iBytes > 160)
 	{
@@ -260,8 +271,8 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	sprintf(szTemp,"%s:%s",pszUsername,pszPassword);
-	base64_encode(szTemp,szAuthString64);
+	sprintf(sbuffer,"%s:%s",username,password);
+	base64_encode(sbuffer,authstring);
 
 #ifdef WIN32
 	if (WSAStartup(MAKEWORD(1,1),&wsad))
@@ -278,8 +289,8 @@ int main(int argc, char** argv)
 #ifdef WIN32
 		WSACleanup();
 #endif
-		sprintf(szTemp,"Error: Unable to resolve address for %s.\n",TARGET);
-		LogMessage(szTemp);
+		sprintf(sbuffer,"Error: Unable to resolve address for %s.\n",TARGET);
+		LogMessage(sbuffer);
 		return 1;
 	}
 
@@ -306,20 +317,20 @@ int main(int argc, char** argv)
 #ifdef WIN32
 		WSACleanup();
 #endif
-		sprintf(szTemp,"Error: Unable to connect to %s (%s).\n",TARGET,inet_ntoa(sai.sin_addr));
-		LogMessage(szTemp);
+		sprintf(sbuffer,"Error: Unable to connect to %s (%s).\n",TARGET,inet_ntoa(sai.sin_addr));
+		LogMessage(sbuffer);
 		return 1;
 	}
 
 		// Construct the HTTP GET request
-	strcpy(szTemp,"POST /statuses/update.xml");
-	sprintf(strchr(szTemp,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,TARGET,szAuthString64);
+	strcpy(sbuffer,"POST /statuses/update.xml");
+	sprintf(strchr(sbuffer,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,TARGET,authstring);
 
-	sprintf(strchr(szTemp, 0), "Content-Length: %i\n\nsource=twitcon&status=%s",strlen(pszStatus) + 22, pszStatus);
-	free(pszStatus);
+	sprintf(strchr(sbuffer, 0), "Content-Length: %i\n\nsource=twitcon&status=%s",strlen(status) + 22, status);
+	free(status);
 
 	// Send the HTTP GET request to the server
-	if (send(s,szTemp,strlen(szTemp),0)==SOCKET_ERROR)
+	if (send(s,sbuffer,strlen(sbuffer),0)==SOCKET_ERROR)
 	{
 		closesocket(s);
 #ifdef WIN32
@@ -330,7 +341,7 @@ int main(int argc, char** argv)
 	}
 
 	// Read the HTTP response from the server
-	iBytes=recv(s,szTemp,4096,0);
+	iBytes=recv(s,sbuffer,4096,0);
 	if (iBytes==SOCKET_ERROR)
 	{
 		closesocket(s);
@@ -346,9 +357,9 @@ int main(int argc, char** argv)
 	// Note that this section overlaps psz and szTemp, but this shouldn't be a
 	// problem since the description of the result should always be shorter than
 	// the HTTP response header, which is not used.
-	szTemp[iBytes]=0;
-	if (psz=strstr(szTemp,"\r\n\r\n")) psz+=4;
-	if (strstr(szTemp, "<error>"))
+	sbuffer[iBytes]=0;
+	if (psz=strstr(sbuffer,"\r\n\r\n")) psz+=4;
+	if (strstr(sbuffer, "<error>"))
 		LogMessage(psz);
 	// Close the socket and cleanup Winsock
 	closesocket(s);
