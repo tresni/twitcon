@@ -154,6 +154,7 @@ char* url_encode(const char* string, int* length)
 		}
 	}
 
+	// twitter counts entities towards the 160 character limit, but not urlencoded strings
 	*length = strlen(buffer);
 
 	for (i = 0; encode_chars[i] != 0; i++)
@@ -360,7 +361,10 @@ int main(int argc, char** argv)
 	sbuffer[iBytes]=0;
 	if (psz=strstr(sbuffer,"\r\n\r\n")) psz+=4;
 	if (strstr(sbuffer, "<error>"))
+	{
 		LogMessage(psz);
+		return 1;
+	}
 	// Close the socket and cleanup Winsock
 	closesocket(s);
 #ifdef WIN32
