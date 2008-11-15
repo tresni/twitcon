@@ -132,7 +132,7 @@ char* url_encode(const char* string, int* length)
 
 	*length = strlen(string);
 
-	buffer = (char*)malloc(length + 1);
+	buffer = (char*)malloc(*length + 1);
 	strcpy(buffer, string);
 
 	for (i = 0; escape_chars[i] != 0; i++)
