@@ -52,9 +52,13 @@
 # include <stdlib.h>
 # include <windows.h>
 # include <winsock.h>
+# define argc __argc
+# define argv __argv
+# define stricmp _stricmp
 #endif
 
 #define TARGET "twitter.com"
+#define URL "/statuses/update.xml"
 #define VERSION "0.2"
 
 // The base64 character set
@@ -102,7 +106,7 @@ void base64_encode(char *pszIn, char *pszOut)
 	}
 }
 
-char* compact_options(int start, int argc, char **argv)
+char* compact_arguments(int start, int argc, char **argv)
 {
 	int argi;
 	char *sep = "";
@@ -179,11 +183,91 @@ char* url_encode(const char* string, int* length)
 	return buffer;
 }
 
+void CopyString(char **dest, char *src)
+{
+	if (*dest != NULL) free(*dest);
+	*dest = malloc(strlen(src) + 1);
+	strcpy(*dest, src);
+}
+
+int ReadOptions(char **username, char **password, char **target, char **url, int argc, char** argv)
+{
+	char optionsFile[MAX_PATH + 1];
+	FILE* fp;
+	int i;
+
+	if (argv[1][0] == '-' && argv[1][1] == 'c')
+		strncpy(optionsFile, argv[2], MAX_PATH);
+	else
+		strcpy(optionsFile, pszConfFile);
+
+	fp = fopen(optionsFile, "rt");
+
+	if (fp != NULL)
+	{
+		while (!feof(fp))
+		{
+			char line[4096];
+			char *option, *value;
+
+			fgets(line, 4096, fp);
+			if(line[0] == 0) continue;
+
+			option = strtok(line, " \t");
+			if (option[0] == '#' || option[0] == '!')
+				continue;
+			
+			value = strtok(NULL, " \t\r\n");
+			if (stricmp(option, "username") == 0)
+				CopyString(username, value);
+			else if (stricmp(option, "password") == 0)
+				CopyString(password, value);
+			else if (stricmp(option, "target") == 0)
+				CopyString(target, value);
+			else if (stricmp(option, "url") == 0)
+				CopyString(url, value);
+		}
+	}
+
+	for (i = 1; i < argc; i++)
+	{
+		if(argv[i][0] != '-') break;
+		switch (argv[i][1])
+		{
+			case 'u':
+			case 'U':
+				CopyString(username, argv[++i]);
+				break;
+			case 'p':
+			case 'P':
+				CopyString(password, argv[++i]);
+				break;
+			case 't':
+			case 'T':
+				CopyString(target, argv[++i]);
+				break;
+			case 'r':
+			case 'R':
+				CopyString(url, argv[++i]);
+				break;
+		}
+	}
+
+	if (*target == NULL)
+		CopyString(target, TARGET);
+
+	if (*url == NULL)
+		CopyString(url, URL);
+
+	return i;
+
+}
+
 void LogMessage(char *message)
 {
-	static FILE *fp = -1;
+	static FILE *fp = (FILE *)-1;
 
-	if (fp == -1)
+	if (fp == (FILE *)-1)
 	{
 		fp = fopen(pszLogFile, "r");
 		if (fp != NULL)
@@ -204,9 +288,6 @@ void LogMessage(char *message)
 
 
 #ifdef WIN32
-#define argc __argc
-#define argv __argv
-
 /* Use WinMain on windows so it doesn't open a console dialog. */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
@@ -215,15 +296,15 @@ int main(int argc, char** argv)
 {
 #endif
 	char *psz, *status=0;
-	char username[4096], password[4096], sbuffer[4096], authstring[256];
+	char *uname, *paswd, *target, *url;
+	char sbuffer[4096], authstring[256];
 #ifdef WIN32
 	WSADATA wsad;
 #endif
 	SOCKET s;
 	SOCKADDR_IN sai;
 	HOSTENT *phe;
-	int iBytes, startParam = 1;
-	FILE *fp;
+	int iBytes = 1;
 
 #ifdef WIN32
 	GetModuleFileName(NULL, pszConfFile, MAX_PATH);
@@ -235,33 +316,11 @@ int main(int argc, char** argv)
 	pszConfFile = "~/.twitcon";
 	pszLogFile = "~/twitcon.log";
 #endif
+	uname = paswd = target = url = NULL;
+	iBytes = ReadOptions(&uname, &paswd, &target, &url, argc, argv);
+	status = compact_arguments(iBytes, argc, argv);
 
-	fp = fopen(pszConfFile, "rt");
-	if (fp != NULL)
-	{
-		fgets(username, 4095, fp);
-		fgets(password, 4095, fp);
-
-		// Get rid of extra whitespace at the end of the string
-		for (iBytes = strlen(username) - 1; username[iBytes] == '\r' || username[iBytes] == '\n' || username[iBytes] == ' ' || username[iBytes] == '\t'; username[iBytes] = '\0', iBytes--);
-		for (iBytes = strlen(password) - 1; password[iBytes] == '\r' || password[iBytes] == '\n' || password[iBytes] == ' ' || password[iBytes] == '\t'; password[iBytes] = '\0', iBytes--);
-
-		fclose(fp);
-	}
-	else
-	{
-		if (argc < 3)
-		{
-			sprintf(sbuffer, "%s username password status message here", argv[0]);
-			LogMessage(sbuffer);
-			return 1;
-		}
-		strcpy(username, argv[1]);
-		strcpy(password, argv[2]);
-		startParam = 3;
-	}
-
-	status = compact_options(startParam, argc, argv);
+	iBytes = 0;
 	psz = url_encode(status, &iBytes);
 	free(status);
 	status = psz;
@@ -272,7 +331,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	sprintf(sbuffer,"%s:%s",username,password);
+	sprintf(sbuffer,"%s:%s",uname,paswd);
 	base64_encode(sbuffer,authstring);
 
 #ifdef WIN32
@@ -284,13 +343,13 @@ int main(int argc, char** argv)
 #endif
 
 	// Resolve the target host name
-	phe=gethostbyname(TARGET);
+	phe=gethostbyname(target);
 	if (!phe)
 	{
 #ifdef WIN32
 		WSACleanup();
 #endif
-		sprintf(sbuffer,"Error: Unable to resolve address for %s.\n",TARGET);
+		sprintf(sbuffer,"Error: Unable to resolve address for %s.\n",target);
 		LogMessage(sbuffer);
 		return 1;
 	}
@@ -318,14 +377,14 @@ int main(int argc, char** argv)
 #ifdef WIN32
 		WSACleanup();
 #endif
-		sprintf(sbuffer,"Error: Unable to connect to %s (%s).\n",TARGET,inet_ntoa(sai.sin_addr));
+		sprintf(sbuffer,"Error: Unable to connect to %s (%s).\n",target,inet_ntoa(sai.sin_addr));
 		LogMessage(sbuffer);
 		return 1;
 	}
 
 		// Construct the HTTP GET request
-	strcpy(sbuffer,"POST /statuses/update.xml");
-	sprintf(strchr(sbuffer,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,TARGET,authstring);
+	sprintf(sbuffer,"POST %s/statuses/update.xml", url);
+	sprintf(strchr(sbuffer,0)," HTTP/1.1\nUser-Agent: TwitCon %s\nHost: %s\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic %s\n",VERSION,target,authstring);
 
 	sprintf(strchr(sbuffer, 0), "Content-Length: %i\n\nsource=twitcon&status=%s",strlen(status) + 22, status);
 	free(status);
@@ -362,7 +421,7 @@ int main(int argc, char** argv)
 	if (psz=strstr(sbuffer,"\r\n\r\n")) psz+=4;
 	if (strstr(sbuffer, "<error>"))
 	{
-		LogMessage(psz);
+		LogMessage(sbuffer);
 		return 1;
 	}
 	// Close the socket and cleanup Winsock
