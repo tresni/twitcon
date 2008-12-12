@@ -58,8 +58,8 @@
 #endif
 
 #define TARGET "twitter.com"
-#define URL "/statuses/update.xml"
-#define VERSION "0.2"
+#define URL ""
+#define VERSION "1.0"
 
 // The base64 character set
 const char *pszBase64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -296,7 +296,7 @@ int main(int argc, char** argv)
 {
 #endif
 	char *psz, *status=0;
-	char *uname, *paswd, *target, *url;
+	char *uname = NULL, *paswd = NULL, *target = NULL, *url = NULL;
 	char sbuffer[4096], authstring[256];
 #ifdef WIN32
 	WSADATA wsad;
@@ -316,7 +316,13 @@ int main(int argc, char** argv)
 	pszConfFile = "~/.twitcon";
 	pszLogFile = "~/twitcon.log";
 #endif
-	uname = paswd = target = url = NULL;
+
+	if (argc == 1)
+	{
+		LogMessage("You have to call twitcon with arguements, I mean come on, really?!");
+		return 1;
+	}
+
 	iBytes = ReadOptions(&uname, &paswd, &target, &url, argc, argv);
 	status = compact_arguments(iBytes, argc, argv);
 
